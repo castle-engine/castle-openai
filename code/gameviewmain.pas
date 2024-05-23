@@ -53,6 +53,8 @@ procedure TViewMain.Start;
 begin
   inherited;
   ButtonSend.OnClick := {$ifdef FPC}@{$endif} ClickSend;
+  // TODO: Below is a temporary way to make edit capture all keypresses
+  Container.ForceCaptureInput := EditQuery;
 end;
 
 procedure TViewMain.Update(const SecondsPassed: Single; var HandleInput: Boolean);
@@ -94,9 +96,10 @@ procedure TViewMain.ClickSend(Sender: TObject);
   end;
 
 var
-  ThreadsResponse, MessageResponse, RunResponse, RunStatusResponse: TJsonData;
-  MessageRequest, RunRequest: TJsonObject;
-  ThreadId, MessageId, RunId, RunStatus: String;
+  ThreadsResponse, MessageResponse, RunResponse, RunStatusResponse,
+    MessagesListResponse: TJsonData;
+  MessageRequest, RunRequest, FirstMessage, FirstMessageContent: TJsonObject;
+  ThreadId, MessageId, RunId, RunStatus, Answer: String;
 begin
   LabelAnswer.Caption := 'You asked: ' + EditQuery.Text;
 
@@ -154,6 +157,17 @@ begin
     Sleep(500);
   end;
 
+  { Get the final answer. }
+  MessagesListResponse := OpenAiQuery('threads/' + ThreadId + '/messages?limit=1',
+    '', hmGet);
+  try
+    WritelnLog('OpenAI', 'Messages list: ' + MessagesListResponse.FormatJSON);
+    FirstMessage := (MessagesListResponse as TJSONObject).Arrays['data'][0] as TJsonObject;
+    FirstMessageContent := FirstMessage.Arrays['content'][0] as TJsonObject;
+    Answer := FirstMessageContent.Objects['text'].Strings['value'];
+  finally FreeAndNil(MessagesListResponse) end;
+
+  LabelAnswer.Caption := 'Answer: ' + Answer;
 end;
 
 end.

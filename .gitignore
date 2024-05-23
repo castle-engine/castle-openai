@@ -15,3 +15,8 @@ castle-auto-generated-resources.res
 # May contain secret data
 AndroidSigningProperties.txt
 code/openai_config.inc
+
+# Outputs
+castle-openai*.zip
+castle-openai*.tar.gz
+castle-openai*.apk

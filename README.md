@@ -49,6 +49,8 @@ This is a very simple demonstration application. As such, the UX is bad:
 
 2. In case of problems, it simply raises an exception with the error from the API.
 
+3. We display `?` in case of missing glyphs, in particular e.g. emoticons that some assistants like to add (e.g. our "cat joke making assistant" often adds a cat emoticon).
+
 ## Building
 
 Compile by:

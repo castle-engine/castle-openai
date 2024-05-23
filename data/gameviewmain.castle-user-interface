@@ -48,6 +48,7 @@
           "HorizontalAnchorSelf" : "hpMiddle",
           "Name" : "EditQuery",
           "Placeholder" : "Ask me anything...",
+          "Text" : "Hello world, are you there?",
           "TranslationPersistent" : {
             "$$ClassName" : "TCastleVector2Persistent",
             "Y" : -2.0000000000000000E+001

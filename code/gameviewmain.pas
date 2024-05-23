@@ -82,13 +82,20 @@ procedure TViewMain.ClickSend(Sender: TObject);
       WriteStr(Download.HttpRequestBody, InputContents);
       Download.Start;
       Download.WaitForFinish;
-      Result := GetJson(StreamToString(Download.Contents));
+      if Download.Status = dsSuccess then
+        Result := GetJson(StreamToString(Download.Contents))
+      else
+        raise Exception.CreateFmt('Error downloading from OpenAI: %s, contents: %s', [
+          Download.ErrorMessage,
+          StreamToString(Download.Contents)
+        ]);
     finally FreeAndNil(Download) end;
   end;
 
 var
-  Response: TJsonData;
-  ThreadId: String;
+  ThreadsResponse, MessageResponse: TJsonData;
+  MessageRequest: TJsonObject;
+  ThreadId, MessageId: String;
 begin
   LabelAnswer.Caption := 'You asked: ' + EditQuery.Text;
 
@@ -98,15 +105,30 @@ begin
     Here, we just do this in Pascal, using TCastleDownload,
     in a general way. }
 
-  Response := OpenAiQuery('threads', '');
+  ThreadsResponse := OpenAiQuery('threads', '');
   try
-    ThreadId := (Response as TJSONObject).Strings['id'];
+    ThreadId := (ThreadsResponse as TJSONObject).Strings['id'];
     WritelnLog('OpenAI', 'Thread id: ' + ThreadId);
     if not IsPrefix('thread_', ThreadId) then
       raise Exception.Create('Unexpected thread id: ' + ThreadId);
-  finally
-    FreeAndNil(Response);
-  end;
+  finally FreeAndNil(ThreadsResponse) end;
+
+  MessageRequest := TJsonObject.Create;
+  try
+    MessageRequest.Strings['role'] := 'user';
+    MessageRequest.Strings['content'] := EditQuery.Text;
+    MessageResponse := OpenAiQuery('threads/' + ThreadId + '/messages', MessageRequest.AsJSON);
+    try
+      MessageId := (MessageResponse as TJSONObject).Strings['id'];
+      WritelnLog('OpenAI', 'Message id: ' + MessageId);
+      if not IsPrefix('msg_', MessageId) then
+        raise Exception.Create('Unexpected message id: ' + MessageId);
+    finally FreeAndNil(MessageResponse) end;
+  finally FreeAndNil(MessageRequest) end;
+
+
+
+
 end;
 
 end.

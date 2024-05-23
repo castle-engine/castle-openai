@@ -27,6 +27,12 @@ Fill the above constants with your OpenAI API key and assistant ID. You need to
 
 Using [Castle Game Engine](https://castle-engine.io/).
 
+## Limitations
+
+This is a very simple demonstration application. As such, the UX is bad -- when the application waits for OpenAI answer, it simply hangs. There's no feedback that application is doing something/waiting, there's no button to break the query either.
+
+It's up to you to improve it, if you want. `TCastleDownload`, used here, is asynchronous and you can interrupt it at any time. If you want better UX, don't use `Download.WaitForFinish`, and don't do a loop with `Sleep(500)`. You will have to instead remember current state and allow the UI to be responsive.
+
 ## Building
 
 Compile by:

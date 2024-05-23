@@ -1,6 +1,14 @@
 # Castle Game Engine - Querying OpenAI
 
-Use OpenAI API from CGE. Just a few tests.
+Use OpenAI API from CGE. Ask a question, it gets an answer using OpenAI "assistant".
+
+Using OpenAI API terminology, each press of "Send" is doing this:
+
+- Creates a conversation thread
+- Adds a message to the thread
+- Runs the thread with indicated assistant
+- Waits until the run is completed
+- Gets the AI answer as the last message in the thread
 
 Before compiling, first create `code/openai_config.inc` file with the following content:
 
@@ -10,7 +18,12 @@ OpenAIApiKey = '...';
 OpenAIAssistantId = 'asst_...';
 ```
 
-Fill the above constants with your OpenAI API key and assistant ID.
+Fill the above constants with your OpenAI API key and assistant ID. You need to
+
+- have an account on OpenAI,
+- create API key,
+- create an assistant to get the assistant ID,
+- and have some credits to use the API.
 
 Using [Castle Game Engine](https://castle-engine.io/).
 

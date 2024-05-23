@@ -68,7 +68,8 @@ procedure TViewMain.ClickSend(Sender: TObject);
   { Set HTTP POST request to OpenAI,
     with Query as URL part after https://api.openai.com/v1/ .
     Returns parsed JSON (it is caller's responsibility to free it). }
-  function OpenAiQuery(const Query: String; const InputContents: String): TJsonData;
+  function OpenAiQuery(const Query: String;
+    const InputContents: String; const HttpMethod: THttpMethod = hmPost): TJsonData;
   var
     Download: TCastleDownload;
   begin
@@ -78,7 +79,7 @@ procedure TViewMain.ClickSend(Sender: TObject);
       Download.HttpHeader('Content-Type', 'application/json');
       Download.HttpHeader('OpenAI-Beta', 'assistants=v2');
       Download.Url := 'https://api.openai.com/v1/' + Query;
-      Download.HttpMethod := hmPost;
+      Download.HttpMethod := HttpMethod;
       WriteStr(Download.HttpRequestBody, InputContents);
       Download.Start;
       Download.WaitForFinish;
@@ -93,9 +94,9 @@ procedure TViewMain.ClickSend(Sender: TObject);
   end;
 
 var
-  ThreadsResponse, MessageResponse: TJsonData;
-  MessageRequest: TJsonObject;
-  ThreadId, MessageId: String;
+  ThreadsResponse, MessageResponse, RunResponse, RunStatusResponse: TJsonData;
+  MessageRequest, RunRequest: TJsonObject;
+  ThreadId, MessageId, RunId, RunStatus: String;
 begin
   LabelAnswer.Caption := 'You asked: ' + EditQuery.Text;
 
@@ -126,8 +127,32 @@ begin
     finally FreeAndNil(MessageResponse) end;
   finally FreeAndNil(MessageRequest) end;
 
+  RunRequest := TJsonObject.Create;
+  try
+    RunRequest.Strings['assistant_id'] := OpenAiAssistantId;
+    RunResponse := OpenAiQuery('threads/' + ThreadId + '/runs', RunRequest.AsJSON);
+    try
+      RunId := (RunResponse as TJSONObject).Strings['id'];
+      WritelnLog('OpenAI', 'Run id: ' + RunId);
+      if not IsPrefix('run_', RunId) then
+        raise Exception.Create('Unexpected run id: ' + RunId);
+    finally FreeAndNil(RunResponse) end;
+  finally FreeAndNil(RunRequest) end;
 
-
+  { Query run, until status is completed.
+    TODO: Show some progress to the user, allow interrupting. }
+  while true do
+  begin
+    RunStatusResponse := OpenAiQuery('threads/' + ThreadId + '/runs/' + RunId,
+      '', hmGet);
+    try
+      RunStatus := (RunStatusResponse as TJSONObject).Strings['status'];
+      WritelnLog('OpenAI', 'Run status: ' + RunStatus);
+      if RunStatus = 'completed' then
+        Break;
+    finally FreeAndNil(RunStatusResponse) end;
+    Sleep(500);
+  end;
 
 end;
 

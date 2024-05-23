@@ -12,5 +12,6 @@ castle-openai.exe
 # Auto-updated by CGE tools when compiling Windows build
 castle-auto-generated-resources.res
 
-# May contain secret data (your Android keystore username and password)
+# May contain secret data
 AndroidSigningProperties.txt
+code/openai_config.inc

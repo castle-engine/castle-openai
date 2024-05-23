@@ -2,6 +2,16 @@
 
 Use OpenAI API from CGE. Just a few tests.
 
+Before compiling, first create `code/openai_config.inc` file with the following content:
+
+```pascal
+{%MainUnit gameviewmain.pas}
+OpenAIApiKey = '...';
+OpenAIAssistantId = 'asst_...';
+```
+
+Fill the above constants with your OpenAI API key and assistant ID.
+
 Using [Castle Game Engine](https://castle-engine.io/).
 
 ## Building

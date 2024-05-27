@@ -10,6 +10,12 @@ As you see, it obeys the instructions, adding Gary and cat joke to the answer.
 
 ![Screenshot](screenshot.png)
 
+## Platforms
+
+Successfully tested on Windows, Linux and Android with _Castle Game Engine_ with FPC.
+
+Should run on all _Castle Game Engine_ platforms where our `TCastleDownload` class (see https://castle-engine.io/manual_network.php#section_castle_download) has all the necessary capabilities. The `TCastleDownload` is our class for asynchronous HTTP requests.
+
 ## How it works and how to compile it
 
 Using OpenAI API terminology, each press of "Send" is doing this:
@@ -31,25 +37,15 @@ OpenAIAssistantId = 'asst_...';
 Fill the above constants with your OpenAI API key and assistant ID. You need to
 
 - have an account on OpenAI,
-- create API key,
-- create an assistant to get the assistant ID,
+- create API key ( https://platform.openai.com/api-keys ),
+- create an assistant to get the assistant ID ( https://platform.openai.com/assistants , https://platform.openai.com/playground/assistants )
 - and have some credits to use the API.
 
 Using [Castle Game Engine](https://castle-engine.io/).
 
-## Limitations - bad UX
+## Limitations
 
-This is a very simple demonstration application. As such, the UX is bad:
-
-1. When the application waits for OpenAI answer, it simply hangs. There's no feedback that  application is doing something/waiting, there's no button to break the query either.
-
-    It's up to you to improve it, if you want. `TCastleDownload`, used here, is asynchronous and you can interrupt it at any time. If you want better UX, don't use `Download.WaitForFinish`, and don't do a loop with `Sleep(500)`. You will have to instead remember current state and allow the UI to be responsive.
-
-    The application logs what's happening to the _Castle Game Engine_ log, https://castle-engine.io/log .
-
-2. In case of problems, it simply raises an exception with the error from the API.
-
-3. We display `?` in case of missing glyphs, in particular e.g. emoticons that some assistants like to add (e.g. our "cat joke making assistant" often adds a cat emoticon).
+We display `?` in case of missing glyphs, in particular e.g. emoticons that some assistants like to add (e.g. our "cat joke making assistant" often adds a cat emoticon).
 
 ## Building
 

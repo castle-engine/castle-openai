@@ -42,6 +42,7 @@
       "$Children" : [
         {
           "$$ClassName" : "TCastleEdit",
+          "AutoOnScreenKeyboard" : true,
           "CaptureAllInput" : false,
           "FontSize" : 4.0000000000000000E+001,
           "HorizontalAnchorParent" : "hpMiddle",

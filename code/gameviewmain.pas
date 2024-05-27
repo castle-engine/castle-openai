@@ -84,7 +84,7 @@ var
 implementation
 
 uses SysUtils,
-  CastleClassUtils, CastleStringUtils, CastleLog;
+  CastleClassUtils, CastleStringUtils, CastleLog, CastleApplicationProperties;
 
 const
   {$I openai_config.inc}
@@ -101,8 +101,15 @@ procedure TViewMain.Start;
 begin
   inherited;
   ButtonSend.OnClick := {$ifdef FPC}@{$endif} ClickSend;
-  // TODO: Below is a temporary way to make edit capture all keypresses
-  Container.ForceCaptureInput := EditQuery;
+
+  { TODO: Below is a temporary hacky way to make edit capture all keypresses.
+    Good on desktops.
+    Not good on Android, when this would actually conflict with on-screen keyboard
+    that should automatically appear when you focus the edit. }
+  if not ApplicationProperties.TouchDevice then
+  begin
+    Container.ForceCaptureInput := EditQuery;
+  end;
 end;
 
 procedure TViewMain.Update(const SecondsPassed: Single; var HandleInput: Boolean);

@@ -19,4 +19,9 @@ See https://castle-engine.io/project_manifest for documentation of this file.
       <path value="code/" />
     </search_paths>
   </compiler_options>
+  <android>
+    <services>
+      <service name="keyboard" />
+    </services>
+  </android>
 </project>

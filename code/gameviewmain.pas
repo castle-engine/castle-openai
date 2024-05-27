@@ -9,10 +9,13 @@ interface
 uses Classes,
   { Enable https downloads. }
   {$ifdef FPC} OpenSslSockets, {$endif}
-  CastleVectors, CastleComponentSerialize,
-  CastleUIControls, CastleControls, CastleKeysMouse;
+  FpJson, JsonParser,
+  CastleVectors, CastleComponentSerialize, CastleDownload,
+  CastleUIControls, CastleControls, CastleKeysMouse, CastleTimeUtils;
 
 type
+  TRequestSuccessEvent = procedure(const Response: TJsonData) of object;
+
   { Main view, where most of the application logic takes place. }
   TViewMain = class(TCastleView)
   published
@@ -23,7 +26,52 @@ type
     EditQuery: TCastleEdit;
     LabelAnswer: TCastleLabel;
   private
+    { Call OpenAiHttpRequest to make HTTP request to OpenAi API.
+      It initializes CurrentRequest and OnRequestSuccess.
+
+      When the HTTP request has finished with success, we
+      - clear CurrentRequest
+      - call OnCurrentRequestSuccess.
+        From OnCurrentRequestSuccess, you can reliably call again
+        OpenAiHttpRequest to start another HTTP request.
+
+      When the request has finished with error,
+      we show it to the user and clear CurrentRequest. }
+    CurrentRequest: TCastleDownload;
+    OnCurrentRequestSuccess: TRequestSuccessEvent;
+
+    { Through a sequence of OpenAI API calls, we learn the ids of these things. }
+    ThreadId, MessageId, RunId: String;
+
+    { Used by WaitAndCall. }
+    WaitSeconds: TFloatTime;
+    WaitCallback: TNotifyEvent;
+
+    { Make HTTP request to OpenAi API.
+      Query is URL suffix, after https://api.openai.com/v1/ .
+      OnCurrentRequestSuccess is called with returned parsed JSON. }
+    procedure OpenAiHttpRequest(const Query: String;
+      const InputContents: String; const HttpMethod: THttpMethod;
+      const OnRequestSuccess: TRequestSuccessEvent);
+
+    { Wait Seconds (fraction of a second) and then call Callback.
+
+      Calling this again, cancels previously scheduled @link(WaitAndCall).
+
+      Calling this with Callback = @nil also cancels previously
+      scheduled @link(WaitAndCall) and makes nothing scheduled. }
+    procedure WaitAndCall(const Seconds: TFloatTime; const Callback: TNotifyEvent);
+
     procedure ClickSend(Sender: TObject);
+
+    { Making queries to OpenAI API, using OpenAiHttpRequest
+      and processing the results. }
+    procedure ThreadsResponse(const Response: TJsonData);
+    procedure MessageResponse(const Response: TJsonData);
+    procedure RunResponse(const Response: TJsonData);
+    procedure RunStatusQuery(Sender: TObject);
+    procedure RunStatusResponse(const Response: TJsonData);
+    procedure FinalAnswerResponse(const Response: TJsonData);
   public
     constructor Create(AOwner: TComponent); override;
     procedure Start; override;
@@ -35,8 +83,8 @@ var
 
 implementation
 
-uses SysUtils, FpJson, JsonParser,
-  CastleDownload, CastleClassUtils, CastleStringUtils, CastleLog;
+uses SysUtils,
+  CastleClassUtils, CastleStringUtils, CastleLog;
 
 const
   {$I openai_config.inc}
@@ -58,114 +106,212 @@ begin
 end;
 
 procedure TViewMain.Update(const SecondsPassed: Single; var HandleInput: Boolean);
+
+  procedure ProcessRequestResponse;
+  var
+    JsonData: TJsonData;
+    SuccessEvent: TRequestSuccessEvent;
+  begin
+    if (CurrentRequest <> nil) and
+       (CurrentRequest.Status in [dsSuccess, dsError]) then
+    begin
+      if CurrentRequest.Status = dsSuccess then
+      begin
+        JsonData := GetJson(StreamToString(CurrentRequest.Contents));
+        try
+          { Free CurrentRequest and save to local variable
+            OnCurrentRequestSuccess before calling OnCurrentRequestSuccess.
+            Reason: OnCurrentRequestSuccess may call OpenAiHttpRequest again
+            setting CurrentRequest and OnCurrentRequestSuccess. }
+          SuccessEvent := OnCurrentRequestSuccess;
+          FreeAndNil(CurrentRequest);
+          OnCurrentRequestSuccess := nil;
+
+          if Assigned(SuccessEvent) then
+            SuccessEvent(JsonData);
+        finally FreeAndNil(JsonData) end;
+      end else
+      begin
+        LabelAnswer.Caption := Format('Error downloading from OpenAI: %s, contents: %s', [
+          CurrentRequest.ErrorMessage,
+          StreamToString(CurrentRequest.Contents)
+        ]);
+        FreeAndNil(CurrentRequest);
+        OnCurrentRequestSuccess := nil;
+      end;
+    end;
+  end;
+
+  procedure ProcessWaitSeconds;
+  begin
+    if (WaitSeconds > 0) and Assigned(WaitCallback) then
+    begin
+      WaitSeconds := WaitSeconds - SecondsPassed;
+      if WaitSeconds <= 0 then
+      begin
+        WaitCallback(Self);
+        WaitCallback := nil;
+      end;
+    end;
+  end;
+
 begin
   inherited;
   { This virtual method is executed every frame (many times per second). }
   Assert(LabelFps <> nil, 'If you remove LabelFps from the design, remember to remove also the assignment "LabelFps.Caption := ..." from code');
   LabelFps.Caption := 'FPS: ' + Container.Fps.ToString;
+  ProcessRequestResponse;
+  ProcessWaitSeconds;
+end;
+
+procedure TViewMain.WaitAndCall(const Seconds: TFloatTime; const Callback: TNotifyEvent);
+begin
+  WaitSeconds := Seconds;
+  WaitCallback := Callback;
+end;
+
+procedure TViewMain.OpenAiHttpRequest(const Query: String;
+  const InputContents: String; const HttpMethod: THttpMethod;
+  const OnRequestSuccess: TRequestSuccessEvent);
+begin
+  if CurrentRequest <> nil then
+  begin
+    WritelnWarning('OpenAI', 'Previous request not finished yet, interrupting it');
+    FreeAndNil(CurrentRequest);
+    OnCurrentRequestSuccess := nil;
+  end;
+
+  CurrentRequest := TCastleDownload.Create(nil);
+  CurrentRequest.HttpHeader('Authorization', 'Bearer ' + OpenAIApiKey);
+  CurrentRequest.HttpHeader('Content-Type', 'application/json');
+  CurrentRequest.HttpHeader('OpenAI-Beta', 'assistants=v2');
+  CurrentRequest.Url := 'https://api.openai.com/v1/' + Query;
+  CurrentRequest.HttpMethod := HttpMethod;
+  WriteStr(CurrentRequest.HttpRequestBody, InputContents);
+  CurrentRequest.Start;
+
+  OnCurrentRequestSuccess := OnRequestSuccess;
 end;
 
 procedure TViewMain.ClickSend(Sender: TObject);
-
-  { Set HTTP POST request to OpenAI,
-    with Query as URL part after https://api.openai.com/v1/ .
-    Returns parsed JSON (it is caller's responsibility to free it). }
-  function OpenAiQuery(const Query: String;
-    const InputContents: String; const HttpMethod: THttpMethod = hmPost): TJsonData;
-  var
-    Download: TCastleDownload;
-  begin
-    Download := TCastleDownload.Create(nil);
-    try
-      Download.HttpHeader('Authorization', 'Bearer ' + OpenAIApiKey);
-      Download.HttpHeader('Content-Type', 'application/json');
-      Download.HttpHeader('OpenAI-Beta', 'assistants=v2');
-      Download.Url := 'https://api.openai.com/v1/' + Query;
-      Download.HttpMethod := HttpMethod;
-      WriteStr(Download.HttpRequestBody, InputContents);
-      Download.Start;
-      Download.WaitForFinish;
-      if Download.Status = dsSuccess then
-        Result := GetJson(StreamToString(Download.Contents))
-      else
-        raise Exception.CreateFmt('Error downloading from OpenAI: %s, contents: %s', [
-          Download.ErrorMessage,
-          StreamToString(Download.Contents)
-        ]);
-    finally FreeAndNil(Download) end;
-  end;
-
-var
-  ThreadsResponse, MessageResponse, RunResponse, RunStatusResponse,
-    MessagesListResponse: TJsonData;
-  MessageRequest, RunRequest, FirstMessage, FirstMessageContent: TJsonObject;
-  ThreadId, MessageId, RunId, RunStatus, Answer: String;
 begin
-  LabelAnswer.Caption := 'You asked: ' + EditQuery.Text;
-
   { Communicate using OpenAI REST API to get the answer to the question.
     See ../test_openai.sh for the curl command that does this,
     with links to docs.
     Here, we just do this in Pascal, using TCastleDownload,
     in a general way. }
 
-  ThreadsResponse := OpenAiQuery('threads', '');
-  try
-    ThreadId := (ThreadsResponse as TJSONObject).Strings['id'];
-    WritelnLog('OpenAI', 'Thread id: ' + ThreadId);
-    if not IsPrefix('thread_', ThreadId) then
-      raise Exception.Create('Unexpected thread id: ' + ThreadId);
-  finally FreeAndNil(ThreadsResponse) end;
+  // reset fields, we will fill them in the following requests
+  ThreadId := '';
+  MessageId := '';
+  RunId := '';
 
+  { prepare first request: create a thread }
+  OpenAiHttpRequest('threads', '', hmPost,
+    {$ifdef FPC}@{$endif} ThreadsResponse);
+
+  LabelAnswer.Caption := 'Threads request send...';
+end;
+
+procedure TViewMain.ThreadsResponse(const Response: TJsonData);
+var
+  MessageRequest: TJsonObject;
+  MessageRequestStr: String;
+begin
+  ThreadId := (Response as TJSONObject).Strings['id'];
+  WritelnLog('OpenAI', 'Thread id: ' + ThreadId);
+  if not IsPrefix('thread_', ThreadId) then
+    raise Exception.Create('Unexpected thread id: ' + ThreadId);
+
+  { prepare next request }
   MessageRequest := TJsonObject.Create;
   try
     MessageRequest.Strings['role'] := 'user';
     MessageRequest.Strings['content'] := EditQuery.Text;
-    MessageResponse := OpenAiQuery('threads/' + ThreadId + '/messages', MessageRequest.AsJSON);
-    try
-      MessageId := (MessageResponse as TJSONObject).Strings['id'];
-      WritelnLog('OpenAI', 'Message id: ' + MessageId);
-      if not IsPrefix('msg_', MessageId) then
-        raise Exception.Create('Unexpected message id: ' + MessageId);
-    finally FreeAndNil(MessageResponse) end;
+    MessageRequestStr := MessageRequest.AsJSON;
   finally FreeAndNil(MessageRequest) end;
 
+  OpenAiHttpRequest('threads/' + ThreadId + '/messages', MessageRequestStr, hmPost,
+    {$ifdef FPC}@{$endif} MessageResponse);
+
+  LabelAnswer.Caption := 'Messages request send...';
+end;
+
+procedure TViewMain.MessageResponse(const Response: TJsonData);
+var
+  RunRequest: TJsonObject;
+  RunRequestStr: String;
+begin
+  MessageId := (Response as TJSONObject).Strings['id'];
+  WritelnLog('OpenAI', 'Message id: ' + MessageId);
+  if not IsPrefix('msg_', MessageId) then
+    raise Exception.Create('Unexpected message id: ' + MessageId);
+
+  { prepare next request }
   RunRequest := TJsonObject.Create;
   try
     RunRequest.Strings['assistant_id'] := OpenAiAssistantId;
-    RunResponse := OpenAiQuery('threads/' + ThreadId + '/runs', RunRequest.AsJSON);
-    try
-      RunId := (RunResponse as TJSONObject).Strings['id'];
-      WritelnLog('OpenAI', 'Run id: ' + RunId);
-      if not IsPrefix('run_', RunId) then
-        raise Exception.Create('Unexpected run id: ' + RunId);
-    finally FreeAndNil(RunResponse) end;
+    RunRequestStr := RunRequest.AsJSON;
   finally FreeAndNil(RunRequest) end;
 
-  { Query run, until status is completed.
-    TODO: Show some progress to the user, allow interrupting. }
-  while true do
-  begin
-    RunStatusResponse := OpenAiQuery('threads/' + ThreadId + '/runs/' + RunId,
-      '', hmGet);
-    try
-      RunStatus := (RunStatusResponse as TJSONObject).Strings['status'];
-      WritelnLog('OpenAI', 'Run status: ' + RunStatus);
-      if RunStatus = 'completed' then
-        Break;
-    finally FreeAndNil(RunStatusResponse) end;
-    Sleep(500);
-  end;
+  OpenAiHttpRequest('threads/' + ThreadId + '/runs', RunRequestStr, hmPost,
+    {$ifdef FPC}@{$endif} RunResponse);
 
-  { Get the final answer. }
-  MessagesListResponse := OpenAiQuery('threads/' + ThreadId + '/messages?limit=1',
-    '', hmGet);
-  try
-    WritelnLog('OpenAI', 'Messages list: ' + MessagesListResponse.FormatJSON);
-    FirstMessage := (MessagesListResponse as TJSONObject).Arrays['data'][0] as TJsonObject;
-    FirstMessageContent := FirstMessage.Arrays['content'][0] as TJsonObject;
-    Answer := FirstMessageContent.Objects['text'].Strings['value'];
-  finally FreeAndNil(MessagesListResponse) end;
+  LabelAnswer.Caption := 'Run request send...';
+end;
+
+procedure TViewMain.RunResponse(const Response: TJsonData);
+begin
+  RunId := (Response as TJSONObject).Strings['id'];
+  WritelnLog('OpenAI', 'Run id: ' + RunId);
+  if not IsPrefix('run_', RunId) then
+    raise Exception.Create('Unexpected run id: ' + RunId);
+
+  RunStatusQuery(Self);
+end;
+
+procedure TViewMain.RunStatusQuery(Sender: TObject);
+begin
+  { prepare next request: query run status, in a loop, until completed }
+  OpenAiHttpRequest('threads/' + ThreadId + '/runs/' + RunId,'', hmGet,
+    {$ifdef FPC}@{$endif} RunStatusResponse);
+
+  LabelAnswer.Caption := 'Run status querying...';
+end;
+
+procedure TViewMain.RunStatusResponse(const Response: TJsonData);
+const
+  { Delay before sending next query to ask for status.
+    This avoids flooding the server with requests (OpenAI can likely handle
+    the load anyway, still its nice thing to do, and for us querying
+    too fast is not useful anyway -- ultimately we have to wait for the answer). }
+  DelayBeforeNextQuery = 0.25;
+var
+  RunStatus: String;
+begin
+  RunStatus := (Response as TJSONObject).Strings['status'];
+  WritelnLog('OpenAI', 'Run status: ' + RunStatus);
+
+  if RunStatus <> 'completed' then
+  begin
+    WaitAndCall(DelayBeforeNextQuery, {$ifdef FPC}@{$endif} RunStatusQuery);
+  end else
+  begin
+    { prepare next request: get final answer }
+    OpenAiHttpRequest('threads/' + ThreadId + '/messages?limit=1', '', hmGet,
+      {$ifdef FPC}@{$endif} FinalAnswerResponse);
+  end;
+end;
+
+procedure TViewMain.FinalAnswerResponse(const Response: TJsonData);
+var
+  FirstMessage, FirstMessageContent: TJsonObject;
+  Answer: String;
+begin
+  WritelnLog('OpenAI', 'Messages list: ' + Response.FormatJSON);
+  FirstMessage := (Response as TJSONObject).Arrays['data'][0] as TJsonObject;
+  FirstMessageContent := FirstMessage.Arrays['content'][0] as TJsonObject;
+  Answer := FirstMessageContent.Objects['text'].Strings['value'];
 
   LabelAnswer.Caption := 'Answer: ' + Answer;
 end;

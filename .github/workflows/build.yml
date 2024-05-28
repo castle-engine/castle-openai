@@ -82,6 +82,10 @@ jobs:
       - name: Castle Game Engine - Build
         run: cd $CASTLE_ENGINE_PATH/tools/build-tool/ && ./castle-engine_compile.sh
 
+      # For now we setup non-functional config in GH Actions, only to test compilation.
+      - name: Setup dummy config
+        run: cp -f code/openai_config.inc.template code/openai_config.inc
+
       - name: Package macOS
         run: castle-engine package --os=darwin --cpu=x86_64 --verbose
       - name: Archive Artifacts

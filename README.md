@@ -14,6 +14,8 @@ As you see, it obeys the instructions, adding Gary and cat joke to the answer.
 
 Successfully tested on Windows, Linux and Android with _Castle Game Engine_ with FPC.
 
+It is responsive on all platforms -- utilizing the fact that `TCastleDownload` is asynchronous, it starts a HTTP request and then UI remains responsive.
+
 Should run on all _Castle Game Engine_ platforms where our `TCastleDownload` class (see https://castle-engine.io/manual_network.php#section_castle_download) has all the necessary capabilities. The `TCastleDownload` is our class for asynchronous HTTP requests.
 
 ## How it works and how to compile it

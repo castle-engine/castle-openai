@@ -26,7 +26,7 @@ Using OpenAI API terminology, each press of "Send" is doing this:
 - Waits until the run is completed
 - Gets the AI answer as the last message in the thread
 
-Before compiling, first create `code/openai_config.inc` file with the following content:
+Before compiling, first create `code/openai_config.inc` file with the following content (you can use `code/openai_config.inc.template` as starting point):
 
 ```pascal
 {%MainUnit gameviewmain.pas}

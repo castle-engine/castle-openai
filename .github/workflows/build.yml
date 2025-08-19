@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     container: kambi/castle-engine-cloud-builds-tools:cge-none
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Setup Castle Game Engine snapshot
       - name: Castle Game Engine - Env CASTLE_ENGINE_PATH
@@ -72,7 +72,7 @@ jobs:
     name: Build Using macOS
     runs-on: macos-13
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install FPC+Lazarus
         uses: gcarreno/setup-lazarus@v3.3.1
         with:

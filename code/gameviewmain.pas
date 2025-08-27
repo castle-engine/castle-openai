@@ -287,6 +287,27 @@ begin
 end;
 
 procedure TViewMain.RunStatusResponse(const Response: TJsonData);
+var
+  ResponseObj: TJsonObject;
+
+  { Get error code and message from OpenAI API response.
+    Returns @false if this is impossible for some reason,
+    when JSON response doesn't specify an error. }
+  function GetLastErrorFromResponse(const ResponseObj: TJsonObject;
+    out ErrorCode, ErrorMessage: String): Boolean;
+  var
+    LastError: TJsonObject;
+  begin
+    if ResponseObj.Objects['last_error'] is TJsonObject then
+    begin
+      LastError := ResponseObj.Objects['last_error'] as TJsonObject;
+      ErrorCode := LastError.Strings['code'];
+      ErrorMessage := LastError.Strings['message'];
+      Result := (ErrorCode <> '') or (ErrorMessage <> '');
+    end else
+      Result := false;
+  end;
+
 const
   { Delay before sending next query to ask for status.
     This avoids flooding the server with requests (OpenAI can likely handle
@@ -295,18 +316,34 @@ const
   DelayBeforeNextQuery = 0.25;
 var
   RunStatus: String;
+  LastErrorCode, LastErrorMessage: String;
 begin
-  RunStatus := (Response as TJSONObject).Strings['status'];
+  ResponseObj := Response as TJsonObject;
+  RunStatus := ResponseObj.Strings['status'];
   WritelnLog('OpenAI', 'Run status: ' + RunStatus);
 
-  if RunStatus <> 'completed' then
+  if (RunStatus = 'queued') or
+     (RunStatus = 'in_progress') then
   begin
     WaitAndCall(DelayBeforeNextQuery, {$ifdef FPC}@{$endif} RunStatusQuery);
   end else
+  if RunStatus = 'completed' then
   begin
     { prepare next request: get final answer }
     OpenAiHttpRequest('threads/' + ThreadId + '/messages?limit=1', '', hmGet,
       {$ifdef FPC}@{$endif} FinalAnswerResponse);
+  end else
+  if RunStatus = 'failed' then
+  begin
+    WritelnWarning('OpenAI', 'Run failed: ' + ResponseObj.FormatJson);
+    if GetLastErrorFromResponse(ResponseObj, LastErrorCode, LastErrorMessage) then
+      raise Exception.CreateFmt('Run failed: %s, %s', [LastErrorCode, LastErrorMessage])
+    else
+      raise Exception.Create('Run failed. Consult log for JSON response');
+  end else
+  begin
+    WritelnWarning('OpenAI', 'Unexpected run status: ' + ResponseObj.FormatJson);
+    raise Exception.Create('Unexpected run status: ' + RunStatus + '. Consult log for full JSON response');
   end;
 end;
 
@@ -315,7 +352,7 @@ var
   FirstMessage, FirstMessageContent: TJsonObject;
   Answer: String;
 begin
-  WritelnLog('OpenAI', 'Messages list: ' + Response.FormatJSON);
+  WritelnLog('OpenAI', 'Messages list: ' + Response.FormatJson);
   FirstMessage := (Response as TJSONObject).Arrays['data'][0] as TJsonObject;
   FirstMessageContent := FirstMessage.Arrays['content'][0] as TJsonObject;
   Answer := FirstMessageContent.Objects['text'].Strings['value'];

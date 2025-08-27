@@ -41,7 +41,7 @@ Fill the above constants with your OpenAI API key and assistant ID. You need to
 - have an account on OpenAI,
 - create API key ( https://platform.openai.com/api-keys ),
 - create an assistant to get the assistant ID ( https://platform.openai.com/assistants , https://platform.openai.com/playground/assistants )
-- and have some credits to use the API.
+- and have some credits to use the API ( https://platform.openai.com/settings/organization/billing/overview ). This is a paid service -- last time we checked, you need to put at least 5 USD to have some credits.
 
 Using [Castle Game Engine](https://castle-engine.io/).
 
